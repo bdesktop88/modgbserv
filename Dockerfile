@@ -11,7 +11,12 @@ RUN npm install --production
 # Copy the rest of the application
 COPY . .
 
-# Expose the port your app runs on
+# Ensure .env is included
+# If you're using Docker locally or deploying to a platform like Railway or Back4App, the env is handled externally.
+# But if testing locally:
+# COPY .env .env
+
+# Expose the port
 EXPOSE 3000
 
 # Start the application
