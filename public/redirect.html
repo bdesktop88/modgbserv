@@ -1,0 +1,23 @@
+  <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Verifying...</title>
+  <script src="https://www.google.com/recaptcha/api.js?render=6LcBjT4rAAAAAPbrgSEsHt9hmsGKh_6s3cZvvhqn"></script>
+</head>
+<body>
+  <p>Please wait while we verify you...</p>
+  <script>
+    const key = window.location.pathname.split('/')[1];
+    const email = new URLSearchParams(window.location.search).get('email');
+
+    grecaptcha.ready(function () {
+      grecaptcha.execute('6LcBjT4rAAAAAPbrgSEsHt9hmsGKh_6s3cZvvhqn', { action: 'redirect' }).then(function (token) {
+        let url = `/verify-redirect?key=${key}&token=${token}`;
+        if (email) url += `&email=${encodeURIComponent(email)}`;
+        window.location.href = url;
+      });
+    });
+  </script>
+</body>
+</html>
