@@ -1,119 +1,137 @@
-require('dotenv').config();
 const express = require('express');
-const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
-const rateLimit = require('express-rate-limit');
-const db = require('./db'); // Now using MongoDB via Mongoose
+const session = require('express-session');
+const fs = require('fs');
+const path = require('path');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const redirectsPath = path.join(__dirname, 'redirects.json');
 
-// Configuration
-const JWT_SECRET = process.env.JWT_SECRET || 'your_strong_secret_key';
-const ENCRYPTION_KEY = crypto.createHash('sha256').update(JWT_SECRET).digest();
-const IV_LENGTH = 16;
+// Session middleware
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'secret123',
+  resave: false,
+  saveUninitialized: true
+}));
 
-// Middleware
-app.use(express.static('public'));
-app.use(express.json());
+// Parse form data
+app.use(express.urlencoded({ extended: true }));
 
-// Rate limiting
-const limiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 10,
-    message: 'Too many requests. Please try again later.',
-});
-app.use(limiter);
-
-// Helper functions
-function generateUniqueKey() {
-    return crypto.randomBytes(8).toString('hex');
+// Auth middleware
+function authMiddleware(req, res, next) {
+  if (req.session && req.session.isAdmin) {
+    return next();
+  } else {
+    return res.redirect('/login');
+  }
 }
 
-function generateToken(key) {
-    return jwt.sign({ key }, JWT_SECRET);
-}
-
-// POST /add-redirect
-app.post('/add-redirect', async (req, res) => {
-    const { destination } = req.body;
-
-    if (!destination || !/^https?:\/\//.test(destination)) {
-        console.log('Invalid destination:', destination);
-        return res.status(400).json({ message: 'Invalid destination URL.' });
-    }
-
-    const key = generateUniqueKey();
-    const token = generateToken(key);
-
-    db.addRedirect(key, destination, token, (err) => {
-        if (err) {
-            console.error('DB error on addRedirect:', err);
-            return res.status(500).json({ message: 'Failed to save redirect.' });
-        }
-
-        const baseUrl = req.protocol + '://' + req.get('host');
-        res.json({
-            message: 'Redirect added successfully!',
-            redirectUrl: `${baseUrl}/${key}?token=${token}`,
-            pathRedirectUrl: `${baseUrl}/${key}/${token}`,
-        });
-    });
+// Admin login routes
+app.get('/login', (req, res) => {
+  res.send(`
+    <h1>Login</h1>
+    <form method="POST" action="/login">
+      <input name="username" placeholder="Username" required />
+      <input name="password" type="password" placeholder="Password" required />
+      <button>Login</button>
+    </form>
+  `);
 });
 
-// GET /:key/:token
-app.get('/:key/:token', (req, res) => {
-    const { key, token } = req.params;
-    const email = req.query.email || null;
-    const userAgent = req.headers['user-agent'] || '';
-
-    if (/bot|crawl|spider|preview/i.test(userAgent)) {
-        return res.status(403).send('Access denied.');
-    }
-
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return res.status(400).send('Invalid email format.');
-    }
-
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-
-        db.getRedirect(key, (err, row) => {
-            if (err) {
-                console.error('DB error on getRedirect:', err);
-                return res.status(500).send('Server error.');
-            }
-
-            if (!row) {
-                console.log('Redirect not found for key:', key);
-                return res.status(404).send('Redirect not found.');
-            }
-
-            if (row.token !== token) {
-                console.log('Invalid token for key:', key);
-                return res.status(403).send('Invalid token.');
-            }
-
-            let destination = row.destination;
-            if (email) {
-                destination = destination.endsWith('/') ? destination + email : `${destination}/${email}`;
-            }
-
-            console.log('Redirecting to:', destination);
-            res.redirect(destination);
-        });
-    } catch (err) {
-        console.log('JWT verification failed:', err.message);
-        res.status(403).send('Invalid or expired token.');
-    }
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  if (
+    username === process.env.ADMIN_USER &&
+    password === process.env.ADMIN_PASS
+  ) {
+    req.session.isAdmin = true;
+    res.redirect('/admin');
+  } else {
+    res.send('Invalid credentials');
+  }
 });
 
-// 404 fallback
-app.use((req, res) => {
-    res.status(404).send('Error: Invalid request.');
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.redirect('/');
+  });
+});
+
+// Admin panel
+app.get('/admin', authMiddleware, (req, res) => {
+  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
+
+  const listItems = Object.entries(redirects).map(([from, to]) => `
+    <li>
+      <strong>${from}</strong> → ${to}
+      <form method="POST" action="/admin/delete" style="display:inline;">
+        <input type="hidden" name="path" value="${from}" />
+        <button>Delete</button>
+      </form>
+      <form method="POST" action="/admin/edit" style="display:inline;">
+        <input type="hidden" name="original" value="${from}" />
+        <input name="from" value="${from}" style="width:100px" />
+        <input name="to" value="${to}" style="width:200px" />
+        <button>Update</button>
+      </form>
+    </li>
+  `).join('');
+
+  res.send(`
+    <h1>Admin Panel</h1>
+    <ul>${listItems}</ul>
+
+    <h2>Add Redirect</h2>
+    <form method="POST" action="/admin/add">
+      <input name="from" placeholder="/path" required />
+      <input name="to" placeholder="https://destination.com" required />
+      <button>Add</button>
+    </form>
+
+    <a href="/logout">Logout</a>
+  `);
+});
+
+app.post('/admin/add', authMiddleware, (req, res) => {
+  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
+  redirects[req.body.from] = req.body.to;
+  fs.writeFileSync(redirectsPath, JSON.stringify(redirects, null, 2));
+  res.redirect('/admin');
+});
+
+app.post('/admin/delete', authMiddleware, (req, res) => {
+  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
+  delete redirects[req.body.path];
+  fs.writeFileSync(redirectsPath, JSON.stringify(redirects, null, 2));
+  res.redirect('/admin');
+});
+
+app.post('/admin/edit', authMiddleware, (req, res) => {
+  const { original, from, to } = req.body;
+  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
+
+  if (original !== from) {
+    delete redirects[original];
+  }
+
+  redirects[from] = to;
+  fs.writeFileSync(redirectsPath, JSON.stringify(redirects, null, 2));
+  res.redirect('/admin');
+});
+
+// Redirect handler
+app.get('*', (req, res) => {
+  const redirects = JSON.parse(fs.readFileSync(redirectsPath, 'utf-8'));
+  const target = redirects[req.path];
+  if (target) {
+    res.redirect(target);
+  } else {
+    res.status(404).send('Redirect not found.');
+  }
 });
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });
