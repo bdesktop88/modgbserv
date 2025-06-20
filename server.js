@@ -12,8 +12,7 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_strong_secret_key';
 const ENCRYPTION_KEY = crypto.createHash('sha256').update(JWT_SECRET).digest();
 const IV_LENGTH = 16;
-const adminRoutes = require('./admin');
-app.use('/admin', adminRoutes);
+
 // Middleware
 app.use(express.static('public'));
 app.use(express.json());
