@@ -100,60 +100,40 @@ app.get('/:key/:token', async (req, res) => {
         res.status(403).send('Invalid or expired token.');
     }
 });
-
-// ----------- DASHBOARD AUTH MIDDLEWARE -----------
-
-function dashboardAuth(req, res, next) {
-    const token = req.headers['x-dashboard-token'];
-    if (token !== process.env.DASHBOARD_TOKEN) {
-        return res.status(401).json({ message: 'Unauthorized' });
-    }
-    next();
-}
-
-// ----------- DASHBOARD API ROUTES -----------
-
-// Get all redirects
-app.get('/dashboard/redirects', dashboardAuth, async (req, res) => {
-    try {
-        const redirects = await db.getAllRedirects();
-        res.json(redirects);
-    } catch (err) {
-        console.error('Error fetching redirects:', err);
-        res.status(500).json({ message: 'Server error' });
-    }
+// GET /redirects - list all redirects
+app.get('/redirects', async (req, res) => {
+  try {
+    const redirects = await db.getAllRedirects();
+    res.json(redirects);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch redirects' });
+  }
 });
 
-// Update a redirect destination
-app.put('/dashboard/redirects/:key', dashboardAuth, async (req, res) => {
-    const { key } = req.params;
-    const { destination } = req.body;
-
-    if (!destination || !/^https?:\/\//.test(destination)) {
-        return res.status(400).json({ message: 'Invalid destination URL.' });
-    }
-
-    try {
-        const updated = await db.updateRedirect(key, destination);
-        if (!updated) return res.status(404).json({ message: 'Redirect not found.' });
-        res.json({ message: 'Redirect updated', redirect: updated });
-    } catch (err) {
-        console.error('Error updating redirect:', err);
-        res.status(500).json({ message: 'Server error' });
-    }
+// PUT /redirects/:key - edit redirect destination
+app.put('/redirects/:key', async (req, res) => {
+  const { key } = req.params;
+  const { destination } = req.body;
+  if (!destination || !/^https?:\/\//.test(destination)) {
+    return res.status(400).json({ message: 'Invalid destination URL.' });
+  }
+  try {
+    await db.updateRedirect(key, destination);
+    res.json({ message: 'Redirect updated.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update redirect.' });
+  }
 });
 
-// Delete a redirect
-app.delete('/dashboard/redirects/:key', dashboardAuth, async (req, res) => {
-    const { key } = req.params;
-    try {
-        const deleted = await db.deleteRedirect(key);
-        if (!deleted) return res.status(404).json({ message: 'Redirect not found.' });
-        res.json({ message: 'Redirect deleted' });
-    } catch (err) {
-        console.error('Error deleting redirect:', err);
-        res.status(500).json({ message: 'Server error' });
-    }
+// DELETE /redirects/:key - delete redirect
+app.delete('/redirects/:key', async (req, res) => {
+  const { key } = req.params;
+  try {
+    await db.deleteRedirect(key);
+    res.json({ message: 'Redirect deleted.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to delete redirect.' });
+  }
 });
 
 // 404 fallback
