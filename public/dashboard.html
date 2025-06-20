@@ -1,120 +1,67 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Redirect Dashboard</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 30px;
-      background-color: #f9f9f9;
-    }
-    h1 {
-      margin-bottom: 20px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-      background-color: #fff;
-    }
-    th, td {
-      padding: 12px 15px;
-      border: 1px solid #ddd;
-      text-align: left;
-    }
-    input[type="text"] {
-      width: 100%;
-      padding: 6px;
-    }
-    button {
-      padding: 6px 12px;
-      cursor: pointer;
-      border: none;
-      border-radius: 4px;
-    }
-    .save-btn {
-      background-color: #4CAF50;
-      color: white;
-    }
-    .delete-btn {
-      background-color: #f44336;
-      color: white;
-    }
-  </style>
-</head>
+<html>
+<head><title>Redirect Dashboard</title></head>
 <body>
-  <h1>Redirect Dashboard</h1>
-  <table id="redirectTable">
-    <thead>
-      <tr>
-        <th>Key</th>
-        <th>Destination</th>
-        <th>Token</th>
-        <th>Created</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      <!-- Rows inserted dynamically -->
-    </tbody>
+  <h1>Redirects</h1>
+  <table border="1" id="redirectsTable">
+    <thead><tr><th>Key</th><th>Destination</th><th>Token</th><th>Actions</th></tr></thead>
+    <tbody></tbody>
   </table>
 
   <script>
-    async function fetchRedirects() {
-      const res = await fetch('/api/redirects');
-      const data = await res.json();
-      const tableBody = document.querySelector('#redirectTable tbody');
-      tableBody.innerHTML = '';
-
-      data.forEach(row => {
+    async function loadRedirects() {
+      const res = await fetch('/redirects');
+      const redirects = await res.json();
+      const tbody = document.querySelector('#redirectsTable tbody');
+      tbody.innerHTML = '';
+      redirects.forEach(({ key, destination, token }) => {
         const tr = document.createElement('tr');
 
-        tr.innerHTML = `
-          <td>${row.key}</td>
-          <td><input type="text" value="${row.destination}" data-key="${row.key}"/></td>
-          <td style="word-break: break-all;">${row.token}</td>
-          <td>${new Date(row.createdAt).toLocaleString()}</td>
-          <td>
-            <button class="save-btn" onclick="saveRedirect('${row.key}')">Save</button>
-            <button class="delete-btn" onclick="deleteRedirect('${row.key}')">Delete</button>
-          </td>
-        `;
+        const tdKey = document.createElement('td');
+        tdKey.textContent = key;
 
-        tableBody.appendChild(tr);
+        const tdDest = document.createElement('td');
+        const input = document.createElement('input');
+        input.value = destination;
+        input.style.width = '300px';
+        tdDest.appendChild(input);
+
+        const tdToken = document.createElement('td');
+        tdToken.textContent = token;
+
+        const tdActions = document.createElement('td');
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save';
+        saveBtn.onclick = async () => {
+          await fetch(`/redirects/${key}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ destination: input.value }),
+          });
+          alert('Updated');
+        };
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = async () => {
+          if (confirm('Delete redirect?')) {
+            await fetch(`/redirects/${key}`, { method: 'DELETE' });
+            tr.remove();
+          }
+        };
+
+        tdActions.appendChild(saveBtn);
+        tdActions.appendChild(deleteBtn);
+
+        tr.appendChild(tdKey);
+        tr.appendChild(tdDest);
+        tr.appendChild(tdToken);
+        tr.appendChild(tdActions);
+
+        tbody.appendChild(tr);
       });
     }
 
-    async function saveRedirect(key) {
-      const input = document.querySelector(`input[data-key="${key}"]`);
-      const newDestination = input.value;
-
-      const res = await fetch(`/api/redirects/${key}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ destination: newDestination })
-      });
-
-      const result = await res.json();
-      alert(result.message || 'Updated');
-      fetchRedirects();
-    }
-
-    async function deleteRedirect(key) {
-      if (!confirm('Are you sure you want to delete this redirect?')) return;
-
-      const res = await fetch(`/api/redirects/${key}`, {
-        method: 'DELETE'
-      });
-
-      const result = await res.json();
-      alert(result.message || 'Deleted');
-      fetchRedirects();
-    }
-
-    // Load data on page load
-    fetchRedirects();
+    loadRedirects();
   </script>
 </body>
 </html>
