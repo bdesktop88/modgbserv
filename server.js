@@ -31,7 +31,7 @@ function generateToken(key) {
   return jwt.sign({ key }, JWT_SECRET);
 }
 
-// POST /add-redirect
+// Add a new redirect
 app.post('/add-redirect', async (req, res) => {
   const { destination } = req.body;
 
@@ -56,7 +56,7 @@ app.post('/add-redirect', async (req, res) => {
   }
 });
 
-// GET /:key/:token
+// Handle redirect requests
 app.get('/:key/:token', async (req, res) => {
   const { key, token } = req.params;
   const email = req.query.email || null;
@@ -71,16 +71,11 @@ app.get('/:key/:token', async (req, res) => {
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    jwt.verify(token, JWT_SECRET);
     const row = await db.getRedirect(key);
 
-    if (!row) {
-      return res.status(404).send('Redirect not found.');
-    }
-
-    if (row.token !== token) {
-      return res.status(403).send('Invalid token.');
-    }
+    if (!row) return res.status(404).send('Redirect not found.');
+    if (row.token !== token) return res.status(403).send('Invalid token.');
 
     let destination = row.destination;
     if (email) {
@@ -93,6 +88,18 @@ app.get('/:key/:token', async (req, res) => {
     res.status(403).send('Invalid or expired token.');
   }
 });
+
+// GET all redirects (for dashboard)
+app.get('/api/redirects', async (req, res) => {
+  try {
+    const redirects = await db.getAllRedirects();
+    res.json(redirects);
+  } catch (err) {
+    console.error('Fetch error:', err);
+    res.status(500).json({ message: 'Failed to fetch redirects' });
+  }
+});
+
 // Update redirect
 app.put('/api/redirects/:id', async (req, res) => {
   try {
@@ -120,7 +127,4 @@ app.use((req, res) => {
   res.status(404).send('Error: Invalid request.');
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+// Start serv
