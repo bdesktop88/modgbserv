@@ -93,6 +93,27 @@ app.get('/:key/:token', async (req, res) => {
     res.status(403).send('Invalid or expired token.');
   }
 });
+// Update redirect
+app.put('/api/redirects/:id', async (req, res) => {
+  try {
+    await db.updateRedirect(req.params.id, req.body.destination);
+    res.json({ message: 'Redirect updated' });
+  } catch (err) {
+    console.error('Update error:', err);
+    res.status(500).json({ message: 'Update failed' });
+  }
+});
+
+// Delete redirect
+app.delete('/api/redirects/:id', async (req, res) => {
+  try {
+    await db.deleteRedirect(req.params.id);
+    res.json({ message: 'Redirect deleted' });
+  } catch (err) {
+    console.error('Delete error:', err);
+    res.status(500).json({ message: 'Delete failed' });
+  }
+});
 
 // 404 fallback
 app.use((req, res) => {
