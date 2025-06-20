@@ -11,20 +11,15 @@ const redirectSchema = new mongoose.Schema({
 
 const Redirect = mongoose.model('Redirect', redirectSchema);
 
-// Add a new redirect using Promises
-async function addRedirect(key, destination, token, callback) {
-    try {
-        const newRedirect = new Redirect({ key, destination, token });
-        await newRedirect.save();
-        callback(null); // success
-    } catch (err) {
-        callback(err); // pass error
-    }
+// Add a new redirect
+async function addRedirect(key, destination, token) {
+    const newRedirect = new Redirect({ key, destination, token });
+    await newRedirect.save();
 }
 
-// Get a redirect by key (this is fine)
-function getRedirect(key, callback) {
-    Redirect.findOne({ key }, callback);
+// Get a redirect by key
+async function getRedirect(key) {
+    return await Redirect.findOne({ key });
 }
 
 module.exports = {
