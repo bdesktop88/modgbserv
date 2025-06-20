@@ -1,37 +1,47 @@
 const mongoose = require('mongoose');
 
-const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/redirectDB';
-mongoose.connect(mongoUri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
 });
 
 const redirectSchema = new mongoose.Schema({
-    key: { type: String, unique: true },
-    destination: String,
-    token: String,
-    createdAt: { type: Date, default: Date.now }
+  key: { type: String, required: true, unique: true },
+  destination: { type: String, required: true },
+  token: { type: String, required: true }
 });
 
 const Redirect = mongoose.model('Redirect', redirectSchema);
 
 module.exports = {
-    addRedirect: async (key, destination, token, callback) => {
-        try {
-            const newRedirect = new Redirect({ key, destination, token });
-            await newRedirect.save();
-            callback(null);
-        } catch (err) {
-            callback(err);
-        }
-    },
+  // Get all redirects
+  async getAllRedirects() {
+    return await Redirect.find({});
+  },
 
-    getRedirect: async (key, callback) => {
-        try {
-            const result = await Redirect.findOne({ key });
-            callback(null, result);
-        } catch (err) {
-            callback(err, null);
-        }
-    }
+  // Get a single redirect by key
+  getRedirect(key, cb) {
+    Redirect.findOne({ key }, cb);
+  },
+
+  // Add a new redirect
+  addRedirect(key, destination, token, cb) {
+    const newRedirect = new Redirect({ key, destination, token });
+    newRedirect.save(cb);
+  },
+
+  // Delete a redirect by key
+  deleteRedirect(key, cb) {
+    Redirect.deleteOne({ key }, cb);
+  },
+
+  // Update redirect (key or destination)
+  updateRedirect(originalKey, newKey, newDestination, cb) {
+    Redirect.findOneAndUpdate(
+      { key: originalKey },
+      { key: newKey, destination: newDestination },
+      { new: true },
+      cb
+    );
+  }
 };
