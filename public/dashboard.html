@@ -1,67 +1,83 @@
 <!DOCTYPE html>
-<html>
-<head><title>Redirect Dashboard</title></head>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Redirect Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+    th { background-color: #f0f0f0; }
+    button { padding: 5px 10px; margin: 2px; }
+    input[type="text"] { width: 100%; padding: 5px; }
+  </style>
+</head>
 <body>
-  <h1>Redirects</h1>
-  <table border="1" id="redirectsTable">
-    <thead><tr><th>Key</th><th>Destination</th><th>Token</th><th>Actions</th></tr></thead>
-    <tbody></tbody>
+  <h1>Redirect Dashboard</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Key</th>
+        <th>Destination</th>
+        <th>Token</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="redirectTable"></tbody>
   </table>
 
   <script>
-    async function loadRedirects() {
-      const res = await fetch('/redirects');
-      const redirects = await res.json();
-      const tbody = document.querySelector('#redirectsTable tbody');
+    async function fetchRedirects() {
+      const res = await fetch('/api/redirects');
+      const data = await res.json();
+      const tbody = document.getElementById('redirectTable');
       tbody.innerHTML = '';
-      redirects.forEach(({ key, destination, token }) => {
-        const tr = document.createElement('tr');
 
-        const tdKey = document.createElement('td');
-        tdKey.textContent = key;
-
-        const tdDest = document.createElement('td');
-        const input = document.createElement('input');
-        input.value = destination;
-        input.style.width = '300px';
-        tdDest.appendChild(input);
-
-        const tdToken = document.createElement('td');
-        tdToken.textContent = token;
-
-        const tdActions = document.createElement('td');
-        const saveBtn = document.createElement('button');
-        saveBtn.textContent = 'Save';
-        saveBtn.onclick = async () => {
-          await fetch(`/redirects/${key}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ destination: input.value }),
-          });
-          alert('Updated');
-        };
-        const deleteBtn = document.createElement('button');
-        deleteBtn.textContent = 'Delete';
-        deleteBtn.onclick = async () => {
-          if (confirm('Delete redirect?')) {
-            await fetch(`/redirects/${key}`, { method: 'DELETE' });
-            tr.remove();
-          }
-        };
-
-        tdActions.appendChild(saveBtn);
-        tdActions.appendChild(deleteBtn);
-
-        tr.appendChild(tdKey);
-        tr.appendChild(tdDest);
-        tr.appendChild(tdToken);
-        tr.appendChild(tdActions);
-
-        tbody.appendChild(tr);
+      data.forEach(r => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${r.key}</td>
+          <td>
+            <input type="text" value="${r.destination}" id="dest-${r._id}">
+          </td>
+          <td>${r.token}</td>
+          <td>
+            <button onclick="updateRedirect('${r._id}')">Update</button>
+            <button onclick="deleteRedirect('${r._id}')">Delete</button>
+          </td>
+        `;
+        tbody.appendChild(row);
       });
     }
 
-    loadRedirects();
+    async function updateRedirect(id) {
+      const newDestination = document.getElementById(`dest-${id}`).value;
+      const res = await fetch(`/api/redirects/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destination: newDestination })
+      });
+
+      if (res.ok) {
+        alert('Updated!');
+        fetchRedirects();
+      } else {
+        alert('Update failed');
+      }
+    }
+
+    async function deleteRedirect(id) {
+      if (!confirm('Are you sure you want to delete this redirect?')) return;
+      const res = await fetch(`/api/redirects/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        alert('Deleted!');
+        fetchRedirects();
+      } else {
+        alert('Delete failed');
+      }
+    }
+
+    fetchRedirects();
   </script>
 </body>
 </html>
