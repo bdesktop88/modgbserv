@@ -3,14 +3,13 @@ const express = require('express');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
-const db = require('./db'); // Your MongoDB functions
+const db = require('./db'); // Now using MongoDB via Mongoose
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configs
+// Configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'your_strong_secret_key';
-const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN || 'your_dashboard_secret';
 const ENCRYPTION_KEY = crypto.createHash('sha256').update(JWT_SECRET).digest();
 const IV_LENGTH = 16;
 
@@ -18,9 +17,9 @@ const IV_LENGTH = 16;
 app.use(express.static('public'));
 app.use(express.json());
 
-// Rate limiter - apply to all routes
+// Rate limiting
 const limiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
     max: 10,
     message: 'Too many requests. Please try again later.',
 });
@@ -35,16 +34,7 @@ function generateToken(key) {
     return jwt.sign({ key }, JWT_SECRET);
 }
 
-// Dashboard auth middleware
-function dashboardAuth(req, res, next) {
-    const token = req.headers['x-dashboard-token'];
-    if (token !== DASHBOARD_TOKEN) {
-        return res.status(401).json({ message: 'Unauthorized' });
-    }
-    next();
-}
-
-// POST /add-redirect - create new redirect
+// POST /add-redirect
 app.post('/add-redirect', async (req, res) => {
     const { destination } = req.body;
 
@@ -70,7 +60,7 @@ app.post('/add-redirect', async (req, res) => {
     }
 });
 
-// GET /:key/:token - redirect route
+// GET /:key/:token
 app.get('/:key/:token', async (req, res) => {
     const { key, token } = req.params;
     const email = req.query.email || null;
@@ -111,6 +101,16 @@ app.get('/:key/:token', async (req, res) => {
     }
 });
 
+// ----------- DASHBOARD AUTH MIDDLEWARE -----------
+
+function dashboardAuth(req, res, next) {
+    const token = req.headers['x-dashboard-token'];
+    if (token !== process.env.DASHBOARD_TOKEN) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+    next();
+}
+
 // ----------- DASHBOARD API ROUTES -----------
 
 // Get all redirects
@@ -124,7 +124,7 @@ app.get('/dashboard/redirects', dashboardAuth, async (req, res) => {
     }
 });
 
-// Update a redirect
+// Update a redirect destination
 app.put('/dashboard/redirects/:key', dashboardAuth, async (req, res) => {
     const { key } = req.params;
     const { destination } = req.body;
@@ -156,7 +156,7 @@ app.delete('/dashboard/redirects/:key', dashboardAuth, async (req, res) => {
     }
 });
 
-// 404 fallback for any other routes
+// 404 fallback
 app.use((req, res) => {
     res.status(404).send('Error: Invalid request.');
 });
