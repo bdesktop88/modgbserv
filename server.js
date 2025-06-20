@@ -100,6 +100,41 @@ app.get('/:key/:token', async (req, res) => {
         res.status(403).send('Invalid or expired token.');
     }
 });
+// GET /redirects - list all redirects
+app.get('/redirects', async (req, res) => {
+  try {
+    const redirects = await db.getAllRedirects();
+    res.json(redirects);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch redirects' });
+  }
+});
+
+// PUT /redirects/:key - edit redirect destination
+app.put('/redirects/:key', async (req, res) => {
+  const { key } = req.params;
+  const { destination } = req.body;
+  if (!destination || !/^https?:\/\//.test(destination)) {
+    return res.status(400).json({ message: 'Invalid destination URL.' });
+  }
+  try {
+    await db.updateRedirect(key, destination);
+    res.json({ message: 'Redirect updated.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update redirect.' });
+  }
+});
+
+// DELETE /redirects/:key - delete redirect
+app.delete('/redirects/:key', async (req, res) => {
+  const { key } = req.params;
+  try {
+    await db.deleteRedirect(key);
+    res.json({ message: 'Redirect deleted.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to delete redirect.' });
+  }
+});
 
 // 404 fallback
 app.use((req, res) => {
