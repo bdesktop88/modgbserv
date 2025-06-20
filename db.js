@@ -32,9 +32,13 @@ async function deleteRedirect(key) {
   return await Redirect.findOneAndDelete({ key });
 }
 
+// Get all redirects
+async function getAllRedirects() {
+  return await Redirect.find({});
+}
+
 module.exports = {
   addRedirect,
   getRedirect,
   updateRedirect,
   deleteRedirect,
-};
